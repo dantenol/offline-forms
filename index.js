@@ -343,38 +343,38 @@ const promptConfig = [
   {
     type: "input",
     name: "url",
-    message: "Digite a URL do Google form",
+    message: "Google Forms URL",
     validate: function (value) {
       var pass = value.match(urlRegex);
       if (pass) {
         return true;
       }
 
-      return "Digite uma URL válida";
+      return "Insert a valid URL";
     },
   },
   {
     type: "input",
     name: "startMsg",
-    message: "Digite a mensagem de início (opcional)",
+    message: "Welcome message (optimal)",
   },
   {
     type: "confirm",
     name: "fullscreen",
     default: false,
-    message: "Exibir uma pergunta por vez? (estilo typeform)",
+    message: "Show questions one by one? (Typeform-like)",
   },
   {
     type: "input",
     name: "finishURL",
     default: "#",
     message:
-      "Digite URL para ser redirecionada após o preenchimento (opcional)",
+      "Redirecting URL after submission (optimal)",
   },
   {
     type: "input",
     name: "filename",
-    message: "Como deseja salvar? (.html)",
+    message: "Output file name (.html)",
     default: "form",
   },
 ];
