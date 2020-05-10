@@ -295,12 +295,26 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
     document.getElementById("send").disabled = true;
   }
 
+  function resetForm() {
+    document.querySelectorAll("[name]").forEach((e) => {
+      e.value = null;
+      e.checked = false;
+    });
+
+    step = 0;
+
+    document.querySelectorAll(".question").forEach(e => {
+      e.style.top = "";
+    });
+  }
+
   function save() {
     const data = formatObj();
     checkData(data);
     const id = "answer." + Math.round(Math.random() * (9999 - 1000) + 1000);
     localStorage.setItem(id, JSON.stringify(data));
-    alert("Suas respostas foram salvas. Não esqueça de envia-las mais tarde!")
+    alert("Suas respostas foram salvas. Não esqueça de envia-las mais tarde!");
+    resetForm()
   }
 
   function submit() {
