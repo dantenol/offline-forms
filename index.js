@@ -80,48 +80,59 @@ function readData(q, i) {
   parsed.push(data);
 }
 
-function buildQuestion(type, options, name) {
+function buildQuestion(type, options, name, required) {
   switch (type) {
     case "text":
-      return buildInput(name);
+      return buildInput(name, required);
     case "textarea":
-      return buildTextarea(name);
+      return buildTextarea(name, required);
     case "radio":
-      return buildMultipleChoice(name, options, "radio");
+      return buildMultipleChoice(name, options, "radio", required);
     case "checkbox":
-      return buildMultipleChoice(name, options, "checkbox");
+      return buildMultipleChoice(name, options, "checkbox", required);
     case "select":
-      return buildSelect(name, options);
+      return buildSelect(name, options, required);
     default:
       break;
   }
 }
 
-function buildInput(name) {
+function buildInput(name, required) {
   const q = new JSDOM("<input />");
   const el = q.window.document.querySelector("input");
   el.type = "text";
   el.name = name;
   el.id = /\d+/g.exec(name);
   el.placeholder = "Digite aqui...";
+  if (required) {
+    el.setAttribute("data-required", "true");
+  }
   return el;
 }
 
-function buildTextarea(name) {
+function buildTextarea(name, required) {
   const q = new JSDOM("<textarea />");
   const el = q.window.document.querySelector("textarea");
   el.name = name;
   el.id = /\d+/g.exec(name);
-  el.placeholder = "Digite aqui...";
+  el, (el.placeholder = "Digite aqui...");
+  if (required) {
+    el.setAttribute("data-required", "true");
+  }
   return el;
 }
 
-function buildMultipleChoice(name, options, type) {
+function buildMultipleChoice(name, options, type, required) {
   const q = new JSDOM("<div class='multipleChoiceContainer' />");
   const el = q.window.document.querySelector("div");
-  options.forEach((o) => {
+  if (required) {
+    el.setAttribute("data-required", "true");
+  }
+  options.forEach((o, i) => {
     const inp = q.window.document.createElement("input");
     const label = q.window.document.createElement("label");
+    const br = q.window.document.createElement("br");
+    const br2 = q.window.document.createElement("br");
     inp.type = type;
     inp.value = o;
     inp.name = name;
@@ -130,13 +141,20 @@ function buildMultipleChoice(name, options, type) {
     label.innerHTML = o;
     el.appendChild(inp);
     el.appendChild(label);
+    if (i < options.length - 1) {
+      el.appendChild(br);
+      el.appendChild(br2);
+    }
   });
   return el;
 }
 
-function buildSelect(name, options) {
+function buildSelect(name, options, required) {
   const q = new JSDOM("<select />");
   const el = q.window.document.querySelector("select");
+  if (required) {
+    el.setAttribute("data-required", "true");
+  }
   el.name = name;
   el.id = /\d+/g.exec(name);
   options.unshift("");
@@ -149,17 +167,44 @@ function buildSelect(name, options) {
   return el;
 }
 
-function buildLogic(questions, formURL, finishURL, fullscreen) {
-  let script = "";
-  script += `let step = 0;
+function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
+  let script = `
+  let step = 0;
+  const build = ${JSON.stringify(build)};
+  const hasMessage = ${Number(Boolean(startMsg))};
   const height = window.document.documentElement.clientHeight;
+
+  function checkFilled() {
+    let i = step;
+    if (hasMessage && i === 0) {
+      return true;
+    } else if (hasMessage) {
+      i--;
+    }
+    let name = build[i].name;
+    let el = document.getElementsByName(name);
+
+    let hasValue = false;
+    let isRequired = false;
+    let regex = null;
+    let regexMatch = true;
+    el.forEach((e) => {
+      if (e.getAttribute("data-required") === "true") isRequired = true; 
+      if (e.getAttribute("data-regex")) {
+        regex = new RegExp(e.getAttribute("data-regex"));
+        regexMatch = false;
+      } 
+      if (e.value) hasValue = true; 
+      if (regex && regex.test(e.value)) regexMatch = true; 
+    })
+
+    return Boolean(regexMatch && (!isRequired || (isRequired && hasValue)));
+  }
+  
   function next() {
-    const mask = questionRegex[step];
-    if (
-      mask &&
-      !mask.test(document.getElementById(questionNames[step]).value)
-    ) {
-      alert("O campo é obrigatório!");
+    const canPass = checkFilled();
+    if (!canPass) {
+      alert("Você deve responder propriamente para continuar!");
       return false;
     }
     const els = document.querySelectorAll(".question");
@@ -207,10 +252,8 @@ function buildLogic(questions, formURL, finishURL, fullscreen) {
   }
 
   function checkData(data) {
-    const structure = ${JSON.stringify(parsed)};
     Object.keys(data).forEach((entry, i) => {
-      console.log(structure[i].required, data[entry]);
-      if (structure[i].required && !data[entry]) {
+      if (build[i].required && !data[entry]) {
         highlightRequired(entry);
         throw "Campo obrigatório";
       }
@@ -218,15 +261,18 @@ function buildLogic(questions, formURL, finishURL, fullscreen) {
   }
 
   function highlightRequired(name) {
-    console.log(name);
     document.getElementsByName(name).forEach((e) => {
-      e.style.border = "2px solid red";
+      e.classList.add("blink");
+      setTimeout(
+        e.classList.remove("blink"),
+        4000,
+      )
     })
   }
 
   async function send() {
     const data = formatObj();
-    checkData();
+    checkData(data);
     const formData = new FormData();
     for (var key in data) {
       formData.append(key, data[key]);
@@ -249,34 +295,85 @@ function buildLogic(questions, formURL, finishURL, fullscreen) {
     document.getElementById("send").disabled = true;
   }
 
+  function save() {
+    const data = formatObj();
+    checkData(data);
+    const id = "answer." + Math.round(Math.random() * (9999 - 1000) + 1000);
+    localStorage.setItem(id, JSON.stringify(data));
+    alert("Suas respostas foram salvas. Não esqueça de envia-las mais tarde!")
+  }
+
+  function submit() {
+    if (${offline}) {
+      save();
+    } else {
+      send();
+    }
+  }
+
   window.document.querySelectorAll("button.next").forEach(b => {
     b.addEventListener("click", next, false);
   });
 
-  window.document.getElementById("send").addEventListener("click", send, false);
-  `;
+  window.document.getElementById("send").addEventListener("click", submit, false);
 
-  if (fullscreen) {
-    script += `
-    window.addEventListener("load", function () {
-      const els = document.querySelectorAll("input");
-      els.forEach((e) =>
+  window.addEventListener("load", function () {
+    if (${fullscreen}) {
+      document.querySelectorAll("input").forEach((e) =>
         e.addEventListener("keypress", function (e) {
           if (e.key === "Enter") {
             next();
           }
         })
       );
-    });`;
-  }
+
+      document.querySelectorAll("input[type='radio']").forEach(e => {
+        e.addEventListener("click", () => {
+          setTimeout(next, 500);
+        }, false)
+      });
+    }
+
+    const masks = document.querySelectorAll("[data-mask]");
+
+    if (masks.length) {
+      let script = "";
+      masks.forEach((el) => {
+        const id = el.id;
+        const mask = el.getAttribute("data-mask");
+        console.log(id, mask);
+        script += \`const Mask_\${id} = IMask(document.getElementById("\${id}"), {
+          mask: [
+            {
+              mask: "\${mask}",
+            },
+          ],
+        });\`;
+      });
+      const scr = document.createElement("script");
+      scr.innerHTML = script;
+      window.document.body.appendChild(scr);
+    }
+  });`;
 
   return script;
 }
 
-function buildPage({ startMsg, finishURL, fullscreen, url }) {
+function buildPage({ startMsg, finishURL, fullscreen, url, offline }) {
   const page = new JSDOM("<html><body></body></html>");
+  const head = page.window.document.head;
+  head.innerHTML = `<meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Form</title>
+  <script src="https://unpkg.com/imask"></script>
+  <link rel="stylesheet" href="./index.css" />`;
+
   const container = page.window.document.createElement("div");
   container.id = "formContainer";
+  if (fullscreen) {
+    container.className = "fullscreen";
+  }
+
   page.window.document.body.appendChild(container);
   if (startMsg) {
     const questionEl = page.window.document.createElement("div");
@@ -284,12 +381,11 @@ function buildPage({ startMsg, finishURL, fullscreen, url }) {
     const title = page.window.document.createElement("p");
     title.innerHTML = startMsg;
     title.className = "title";
-    if (fullscreen) {
-      const btn = page.window.document.createElement("button");
-      btn.innerHTML = "Começar";
-      btn.onclick = "next()";
-      questionEl.appendChild(btn);
-    }
+    const btn = page.window.document.createElement("button");
+    btn.innerHTML = "Começar";
+    btn.className = "next";
+    questionEl.appendChild(title);
+    questionEl.appendChild(btn);
     container.appendChild(questionEl);
   }
 
@@ -309,7 +405,7 @@ function buildPage({ startMsg, finishURL, fullscreen, url }) {
       subtitle.innerHTML = q.subtitle;
       questionEl.appendChild(subtitle);
     }
-    const question = buildQuestion(q.type, q.options, q.name);
+    const question = buildQuestion(q.type, q.options, q.name, q.required);
     if (question) {
       questionEl.appendChild(question);
     } else {
@@ -323,15 +419,18 @@ function buildPage({ startMsg, finishURL, fullscreen, url }) {
       btn.className = "next";
       questionEl.appendChild(btn);
     } else if (i === parsed.length - 1) {
+      const br = page.window.document.createElement("br");
+      questionEl.appendChild(br);
       const btn = page.window.document.createElement("button");
       btn.innerHTML = "Finalizar";
       btn.id = "send";
       questionEl.appendChild(btn);
     }
+
     container.appendChild(questionEl);
   });
 
-  const scripts = buildLogic(parsed, url, finishURL, fullscreen);
+  const scripts = buildLogic(parsed, url, finishURL, fullscreen, startMsg, offline);
   const scriptEl = page.window.document.createElement("script");
   scriptEl.innerHTML = scripts;
   console.log(scriptEl.outerHTML);
@@ -365,11 +464,16 @@ const promptConfig = [
     message: "Show questions one by one? (Typeform-like)",
   },
   {
+    type: "confirm",
+    name: "offline",
+    default: false,
+    message: "Make it offline-first?",
+  },
+  {
     type: "input",
     name: "finishURL",
     default: "#",
-    message:
-      "Redirecting URL after submission (optimal)",
+    message: "Redirecting URL after submission (optimal)",
   },
   {
     type: "input",
