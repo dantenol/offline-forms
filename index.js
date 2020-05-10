@@ -329,7 +329,7 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
 
       document.querySelectorAll("input[type='radio']").forEach(e => {
         e.addEventListener("click", () => {
-          setTimeout(next, 500);
+          setTimeout(next, 200);
         }, false)
       });
     }
