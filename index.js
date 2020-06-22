@@ -129,15 +129,17 @@ function buildMultipleChoice(name, options, type, required) {
     el.setAttribute("data-required", "true");
   }
   options.forEach((o, i) => {
+    const parsedOption = o.replace(/ /g, "_");
+    console.log(parsedOption);
     const inp = q.window.document.createElement("input");
     const label = q.window.document.createElement("label");
     const br = q.window.document.createElement("br");
     const br2 = q.window.document.createElement("br");
     inp.type = type;
-    inp.value = o;
+    inp.value = parsedOption;
     inp.name = name;
-    inp.id = "" + /\d+/g.exec(name) + "." + o;
-    label.htmlFor = "" + /\d+/g.exec(name) + "." + o;
+    inp.id = "" + /\d+/g.exec(name) + "." + parsedOption;
+    label.htmlFor = "" + /\d+/g.exec(name) + "." + parsedOption;
     label.innerHTML = o;
     el.appendChild(inp);
     el.appendChild(label);
@@ -279,13 +281,9 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
     }
   
     try {
-      const res = await fetch(
+      const res = await axios(
         "${formURL.replace("viewform", "formResponse")}",
-        {
-          method: "POST",
-          mode: "no-cors",
-          body: formData
-        }
+          formData
       );
       window.location.href = "${finishURL}";
     } catch (error) {
@@ -379,6 +377,7 @@ function buildPage({ startMsg, finishURL, fullscreen, url, offline }) {
   head.innerHTML = `<meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Form</title>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   <script src="https://unpkg.com/imask"></script>
   <link rel="stylesheet" href="./index.css" />`;
 
@@ -447,7 +446,6 @@ function buildPage({ startMsg, finishURL, fullscreen, url, offline }) {
   const scripts = buildLogic(parsed, url, finishURL, fullscreen, startMsg, offline);
   const scriptEl = page.window.document.createElement("script");
   scriptEl.innerHTML = scripts;
-  console.log(scriptEl.outerHTML);
   page.window.document.body.appendChild(scriptEl);
   return page.serialize();
 }

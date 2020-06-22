@@ -11,6 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^0.19.2",
+    "form-data": "^3.0.0",
     "inquirer": "^7.1.0",
     "jsdom": "^16.2.2",
     "pretty": "^2.0.0"
