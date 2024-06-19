@@ -1,16 +1,14 @@
-"use strict";
-const jsdom = require("jsdom");
-const fs = require("fs");
-const pretty = require("pretty");
-const inquirer = require("inquirer");
-
-const { JSDOM } = jsdom;
+import { JSDOM } from "jsdom";
+import fs from "fs";
+import pretty from "pretty";
+import inquirer from "inquirer";
 
 const parsed = [];
 
 const urlRegex = /https:\/\/docs.google.com\/forms\/.+?\/viewform/g;
 
 function getType(obj) {
+  // console.log('question type', obj.outerHTML)
   const pureElem = obj.querySelector("input, textarea");
   if (pureElem && pureElem.tagName === "TEXTAREA") {
     return "textarea";
@@ -22,12 +20,6 @@ function getType(obj) {
     return "checkbox[]";
   } else if (obj.querySelector("[role='listbox']")) {
     return "select[]";
-  }
-}
-
-function getSubtitle(elem) {
-  if (elem) {
-    return elem.textContent;
   }
 }
 
@@ -44,7 +36,7 @@ function getAlternatives(elem) {
   const dropdown = elem.querySelector("[role='listbox']");
   if (dropdown) {
     dropdown
-      .querySelectorAll("[role='option']:not(.isPlaceholder)")
+      .querySelectorAll("[role='option']:not([data-value=''])")
       .forEach((e) => {
         alternatives.push(e.textContent);
       });
@@ -53,30 +45,37 @@ function getAlternatives(elem) {
 }
 
 function isRequired(elem) {
-  return Boolean(
-    elem.querySelector(".freebirdFormviewerViewItemsItemRequiredAsterisk")
-  );
+  const header = elem.querySelector("[role='heading']");
+  if (header.textContent.endsWith("*")) {
+    return true;
+  }
 }
 
+function getTitle(elem) {
+  const header = elem.querySelector("[role='heading']");
+  const clean = header.textContent.trim();
+  return clean;
+}
+
+// name is the internal identifier for the question
 function getName(elem) {
-  const el = elem.querySelector("[name^='entry']");
-  const name = /entry\.\d+/g.exec(el.name);
-  return name[0];
+  const el = elem.dataset.params;
+  console.log("question name")
+  const name = /\[\[([0-9]{7,})/g.exec(el);
+  return name[1];
 }
 
 function readData(q, i) {
   const data = {};
-  data.title = q.querySelector("[role='heading']").textContent;
-  data.subtitle = getSubtitle(
-    q.querySelector(".freebirdFormviewerViewItemsItemItemHelpText")
-  );
+  data.title = getTitle(q);
+  data.name = "entry_" + getName(q);
   data.type = getType(q);
   if (data.type && data.type.includes("[]")) {
     data.options = getAlternatives(q);
     data.type = data.type.slice(0, -2);
   }
   data.required = isRequired(q);
-  data.name = getName(q);
+  console.log(data, i);
   parsed.push(data);
 }
 
@@ -254,10 +253,11 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
   }
 
   function checkData(data) {
-    Object.keys(data).forEach((entry, i) => {
-      if (build[i].required && !data[entry]) {
-        highlightRequired(entry);
-        throw "Campo obrigatório";
+    build.forEach((q) => {
+      if (q.required && !data[q.name]) {
+        console.log(q.name, data)
+        highlightRequired(q.name);
+        throw "Campo obrigatório " + q.title;
       }
     });
   }
@@ -275,15 +275,20 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
   async function send() {
     const data = formatObj();
     checkData(data);
-    const formData = new FormData();
-    for (var key in data) {
-      formData.append(key, data[key]);
+    const paramsObj = {
+      ...data,
+      // these are random values that are needed to send the form to prevent CORS error
+      callback: "jQuery36101560114710959728_1718735723536",
+      fvv: 1,
+      fbzx: -7285727184728930223,
+      pageHistory: 0,
+      _: 1718735723538,
     }
-  
+    const params = new URLSearchParams(paramsObj).toString().replace(/entry\_/g, "entry.");
+
     try {
       const res = await axios(
-        "${formURL.replace("viewform", "formResponse")}",
-          formData
+        "${formURL.replace("viewform", "formResponse")}?" + params,
       );
       window.location.href = "${finishURL}";
     } catch (error) {
@@ -485,7 +490,7 @@ const promptConfig = [
     type: "input",
     name: "finishURL",
     default: "#",
-    message: "Redirecting URL after submission (optimal)",
+    message: "Redirecting URL after submission (optional)",
   },
   {
     type: "input",
@@ -500,14 +505,15 @@ async function run() {
   const dom = await JSDOM.fromURL(settings.url);
 
   const questions = dom.window.document.querySelectorAll(
-    ".freebirdFormviewerViewNumberedItemContainer"
+    "[data-params]"
   );
 
+  console.log("Parsing...")
   questions.forEach(readData);
 
   const page = buildPage(settings);
   const prettyHTML = pretty(page);
-  await fs.writeFileSync(settings.filename + ".html", prettyHTML);
+  fs.writeFileSync(settings.filename + ".html", prettyHTML);
   console.log("done");
 }
 
