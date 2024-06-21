@@ -30,7 +30,7 @@ button {
 }
 
 #formContainer {
-  background-image: linear-gradient(45deg, #00adab 0%, #005c5a 100%);
+  background-image: linear-gradient(45deg, #e4d8f6 0%, #9a52ff 100%);
   color: white;
   overflow: hidden;
   min-height: 100vh;
@@ -52,7 +52,7 @@ a {
 }
 
 #formContainer > a {
-  color: #ed7921;
+  color: #f85966;
   font-weight: bold;
   font-size: xx-large;
 }
@@ -83,6 +83,7 @@ textarea {
   border: 2px solid #ffddaa;
   min-width: 256px;
   background-color: white;
+  cursor: text;
 }
 
 .fullscreen input,
@@ -95,7 +96,7 @@ button {
   width: 100%;
   min-height: 48px;
   border-radius: 8px;
-  background-color: #ed7921;
+  background-color: #f85966;
   color: white;
   font-size: 24px;
   font-weight: bold;
@@ -134,6 +135,7 @@ button {
 }
 
 .title {
+  text-align: center;
   font-weight: bold;
   margin: 0;
 }
@@ -143,7 +145,7 @@ button {
 }
 
 .subtitle {
-  color: #ffbf8f;
+  color: #ec9aa1;
   font-size: 16px;
   margin-top: 4px;
 }
@@ -161,8 +163,23 @@ textarea {
   background-color: darkgray;
 }
 
+.questionSpacer {
+  height: 48px;
+}
+
 .multipleChoiceContainer {
   margin-top: 8px;
+  display: flex;
+  gap: 24px;
+}
+
+.multipleChoiceContainer.horizontal {
+  margin-top: 16px !important;
+  justify-content: center;
+}
+
+.multipleChoiceContainer.vertical {
+  flex-direction: column;
 }
 
 .fullscreen .multipleChoiceContainer {
@@ -171,11 +188,10 @@ textarea {
 
 input[type="checkbox"],
 input[type="radio"] {
-  --active: #ed7921;
+  --active: #f85966;
   --active-inner: #fff;
-  --focus: 2px rgba(254, 178, 39, 0.3);
-  --border: #ffddaa;
-  --border-hover: #ed7921;
+  --border: #ec9aa1;
+  --border-hover: #f85966;
   --background: #fff;
   --disabled: #f6f8ff;
   --disabled-inner: #e1e6f9;
