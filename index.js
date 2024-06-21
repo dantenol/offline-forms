@@ -60,7 +60,6 @@ function getTitle(elem) {
 // name is the internal identifier for the question
 function getName(elem) {
   const el = elem.dataset.params;
-  console.log("question name")
   const name = /\[\[([0-9]{7,})/g.exec(el);
   return name[1];
 }
@@ -70,19 +69,19 @@ function readData(q, i) {
   data.title = getTitle(q);
   data.name = "entry_" + getName(q);
   data.type = getType(q);
-  if (data.type && data.type.includes("[]")) {
+  if (data.type && data.type.endsWith("[]")) {
     data.options = getAlternatives(q);
     data.type = data.type.slice(0, -2);
   }
   data.required = isRequired(q);
-  console.log(data, i);
+  // console.log(data, i);
   parsed.push(data);
 }
 
-function buildQuestion(type, options, name, required) {
+function buildQuestion({ type, options, name, required, title }) {
   switch (type) {
     case "text":
-      return buildInput(name, required);
+      return buildInput(title, name, required);
     case "textarea":
       return buildTextarea(name, required);
     case "radio":
@@ -96,13 +95,52 @@ function buildQuestion(type, options, name, required) {
   }
 }
 
-function buildInput(name, required) {
+/**
+ * recieves the title or options and extracts the configurations.
+ * SKIP is the number of steps to skip if the option is selected
+ * MASK is the input mask for the input
+ * REGEX is the regex to validate the input
+ * @param {string} title
+ * @returns string
+ */
+function getConfigs(title) {
+  const originalTitle = title.split("//")[0].trim();
+  const configText = title.match(/\/\/\s?\[.+\](\s\*)?$/g);
+  if (!configText) {
+    return { originalTitle };
+  }
+
+  const skipValue = /SKIP=(\d+)( |\])/g.exec(configText);
+  const maskValue = /MASK=(.+?)( |\])/g.exec(configText);
+  const regexValue = /REGEX=(\^.+?\$)( |\])/g.exec(configText);
+  const samePageValue = /SAMEPAGE=(TRUE)( |\])/g.exec(configText);
+  const placeholderValue = /PLACEHOLDER=(.+?)( |\])/g.exec(configText);
+  const autoNextValue = /AUTONEXT=(\d+)( |\])/g.exec(configText);
+  const skip = skipValue ? skipValue[1] : undefined;
+  const mask = maskValue ? maskValue[1] : undefined;
+  const regex = regexValue ? regexValue[1] : undefined;
+  const samePage = samePageValue ? samePageValue[1] === "TRUE" : undefined;
+
+  const placeholder = placeholderValue ? placeholderValue[1] : undefined;
+
+  return { originalTitle, skip, mask, regex, samePage, placeholder, autoNext };
+}
+
+function buildInput(title, name, required) {
   const q = new JSDOM("<input />");
   const el = q.window.document.querySelector("input");
+  const { originalTitle, skip, mask, regex, placeholder } = getConfigs(title);
+  console.log(originalTitle, skip, mask, regex);
   el.type = "text";
   el.name = name;
+  if (mask) {
+    el.setAttribute("data-mask", mask);
+  }
+  if (regex) {
+    el.setAttribute("data-regex", regex);
+  }
   el.id = /\d+/g.exec(name);
-  el.placeholder = "Digite aqui...";
+  el.placeholder = placeholder || "Digite aqui...";
   if (required) {
     el.setAttribute("data-required", "true");
   }
@@ -124,28 +162,45 @@ function buildTextarea(name, required) {
 function buildMultipleChoice(name, options, type, required) {
   const q = new JSDOM("<div class='multipleChoiceContainer' />");
   const el = q.window.document.querySelector("div");
-  if (required) {
-    el.setAttribute("data-required", "true");
+
+  // set vertical or horizontal class based on the quantity of options
+  if (options.length > 2) {
+    el.classList.add("vertical");
+  } else {
+    el.classList.add("horizontal");
   }
-  options.forEach((o, i) => {
-    const parsedOption = o.replace(/ /g, "_");
-    console.log(parsedOption);
+  options.forEach((o) => {
+    const { originalTitle, skip, mask, regex } = getConfigs(o);
+    const optionContainer = q.window.document.createElement("div");
+    optionContainer.className = "optionContainer";
     const inp = q.window.document.createElement("input");
     const label = q.window.document.createElement("label");
-    const br = q.window.document.createElement("br");
-    const br2 = q.window.document.createElement("br");
     inp.type = type;
-    inp.value = parsedOption;
+    inp.value = originalTitle;
     inp.name = name;
-    inp.id = "" + /\d+/g.exec(name) + "." + parsedOption;
-    label.htmlFor = "" + /\d+/g.exec(name) + "." + parsedOption;
-    label.innerHTML = o;
-    el.appendChild(inp);
-    el.appendChild(label);
-    if (i < options.length - 1) {
-      el.appendChild(br);
-      el.appendChild(br2);
+    if (required) {
+      inp.setAttribute("data-required", "true");
     }
+    if (skip) {
+      inp.setAttribute("data-skip", skip);
+    }
+    if (mask) {
+      inp.setAttribute("data-mask", mask);
+    }
+    if (regex) {
+      inp.setAttribute("data-regex", regex);
+    }
+    if (type === "checkbox") {
+      if (autoNext) {
+        inp.setAttribute("data-autoNext", autoNext);
+      }
+    }
+    inp.id = "" + /\d+/g.exec(name) + "." + originalTitle;
+    label.htmlFor = "" + /\d+/g.exec(name) + "." + originalTitle;
+    label.innerHTML = originalTitle;
+    optionContainer.appendChild(inp);
+    optionContainer.appendChild(label);
+    el.appendChild(optionContainer);
   });
   return el;
 }
@@ -168,7 +223,14 @@ function buildSelect(name, options, required) {
   return el;
 }
 
-function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
+function buildLogic(
+  build,
+  formURL,
+  finishMessage,
+  fullscreen,
+  startMsg,
+  offline
+) {
   let script = `
   let step = 0;
   const build = ${JSON.stringify(build)};
@@ -177,32 +239,53 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
 
   function checkFilled() {
     let i = step;
-    if (hasMessage && i === 0) {
+    if (hasMessage && step === 0) {
       return true;
     } else if (hasMessage) {
       i--;
     }
-    let name = build[i].name;
-    let el = document.getElementsByName(name);
+    const inputElementNames = document.querySelectorAll(".question")[i].querySelectorAll("[name]");
 
-    let hasValue = false;
-    let isRequired = false;
-    let regex = null;
-    let regexMatch = true;
-    el.forEach((e) => {
-      if (e.getAttribute("data-required") === "true") isRequired = true; 
-      if (e.getAttribute("data-regex")) {
-        regex = new RegExp(e.getAttribute("data-regex"));
-        regexMatch = false;
-      } 
-      if (e.value) hasValue = true; 
-      if (regex && regex.test(e.value)) regexMatch = true; 
-    })
+    // extract unique values
+    const names = []
+    inputElementNames.forEach((e) => {
+      if (!names.includes(e.name)) {
+        names.push(e.name);
+      }
+    });
 
-    return Boolean(regexMatch && (!isRequired || (isRequired && hasValue)));
+    const checks = names.map((n) => {
+      const buildConfig = build.find((b) => b.name === n.name);
+      const el = document.getElementsByName(n);
+      let hasValue = false;
+      let isRequired = false;
+      let regex = null;
+      let regexMatch = true;
+      let filledProp = "value"
+      if (["radio", "checkbox"].includes(el[0].type)) {
+        filledProp = "checked";
+      }
+      el.forEach((e) => {
+        if (e.getAttribute("data-required") === "true") isRequired = true;
+        if (e.getAttribute("data-regex")) {
+          regex = new RegExp(e.getAttribute("data-regex"));
+          regexMatch = false;
+        }
+        if (e[filledProp]) hasValue = true;
+        if (regex && regex.test(e.value)) regexMatch = true;
+      })
+
+      return Boolean(regexMatch && (!isRequired || (isRequired && hasValue)));
+    });
+
+    return checks.every((c) => c === true);
   }
-  
-  function next() {
+
+  function next(goToNext) {
+    let add = 1;
+    if (typeof goToNext === "string" && Number.isInteger(parseInt(goToNext))) {
+      add = parseInt(goToNext);
+    }
     const canPass = checkFilled();
     if (!canPass) {
       alert("Você deve responder propriamente para continuar!");
@@ -210,13 +293,12 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
     }
     const els = document.querySelectorAll(".question");
     els.forEach((e) => {
-      e.style.top = "-" + (step + 1) * 100 + "%";
+      e.style.top = "-" + (step + add) * 100 + "%";
     });
-    step++;
+    step += add;
   }
-  
+
   function listCheckbox(obj, name, val) {
-    console.log(obj, name, val);
     if (!obj[name]) {
       obj[name] = [val];
     } else {
@@ -245,7 +327,11 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
     }
     const linearObj = {}
     Object.keys(obj).forEach(k => {
-      linearObj[k] = String(obj[k]);
+      if (Array.isArray(obj[k])) {
+        linearObj[k] = obj[k];
+      } else {
+        linearObj[k] = String(obj[k]);
+      }
     });
 
     console.log(linearObj)
@@ -272,6 +358,23 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
     })
   }
 
+  function convertObjectToURLSearchParams(obj) {
+    const params = new URLSearchParams();
+    
+    Object.entries(obj).forEach(([key, value]) => {
+      const correctKey = key.replace(/entry\./g, "entry_");
+      if (Array.isArray(value)) {
+        value.forEach(item => {
+          params.append(correctKey, item);
+        });
+      } else {
+        params.append(correctKey, value);
+      }
+    });
+    
+    return params;
+  }
+
   async function send() {
     const data = formatObj();
     checkData(data);
@@ -284,15 +387,22 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
       pageHistory: 0,
       _: 1718735723538,
     }
-    const params = new URLSearchParams(paramsObj).toString().replace(/entry\_/g, "entry.");
+    const params = convertObjectToURLSearchParams(paramsObj);
 
     try {
       const res = await axios(
         "${formURL.replace("viewform", "formResponse")}?" + params,
       );
-      window.location.href = "${finishURL}";
     } catch (error) {
+      // show status code and message
       console.log(error);
+      console.log(error.response.status, error.response.data);
+    } finally {
+      if ("${finishMessage}".startsWith("http")) {
+        window.location.href = "${finishMessage}";
+      } else {
+        next();
+      }
     }
 
     document.getElementById("send").disabled = true;
@@ -346,7 +456,8 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
 
       document.querySelectorAll("input[type='radio']").forEach(e => {
         e.addEventListener("click", () => {
-          setTimeout(next, 200);
+          const skip = e.getAttribute("data-skip");
+          setTimeout(() => next(skip), 300);
         }, false)
       });
     }
@@ -358,7 +469,7 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
       masks.forEach((el) => {
         const id = el.id;
         const mask = el.getAttribute("data-mask");
-        console.log(id, mask);
+        // console.log(id, mask);
         script += \`const Mask_\${id} = IMask(document.getElementById("\${id}"), {
           mask: [
             {
@@ -376,7 +487,7 @@ function buildLogic(build, formURL, finishURL, fullscreen, startMsg, offline) {
   return script;
 }
 
-function buildPage({ startMsg, finishURL, fullscreen, url, offline }) {
+function buildPage({ startMsg, finishMessage, fullscreen, url, offline }) {
   const page = new JSDOM("<html><body></body></html>");
   const head = page.window.document.head;
   head.innerHTML = `<meta charset="UTF-8" />
@@ -407,48 +518,88 @@ function buildPage({ startMsg, finishURL, fullscreen, url, offline }) {
     container.appendChild(questionEl);
   }
 
+  console.log(parsed);
   parsed.forEach((q, i) => {
     const questionEl = page.window.document.createElement("div");
+    const questionConfig = getConfigs(q.title);
+    console.log(questionConfig);
     questionEl.className = "question";
+    let currQuestionEl = questionEl;
+    if (questionConfig.samePage) {
+      const prevQuestionEl = container.lastChild;
+      currQuestionEl = prevQuestionEl;
+      // delete exisisting button
+      currQuestionEl.removeChild(prevQuestionEl.querySelector("button"));
+      const questionSpacer = page.window.document.createElement("div");
+      questionSpacer.className = "questionSpacer";
+      currQuestionEl.appendChild(questionSpacer);
+    }
+
     const title = page.window.document.createElement("p");
-    title.innerHTML = q.title;
+    title.innerHTML = q.title.split("//")[0].trim();
     title.className = "title";
     if (q.required) {
+      if (!title.innerHTML.endsWith("*")) {
+        title.innerHTML += " *";
+      }
       title.innerHTML = title.innerHTML.replace(" *", "<span>*</span>");
     }
-    questionEl.appendChild(title);
+    currQuestionEl.appendChild(title);
     if (q.subtitle) {
       const subtitle = page.window.document.createElement("p");
       subtitle.className = "subtitle";
       subtitle.innerHTML = q.subtitle;
-      questionEl.appendChild(subtitle);
+      currQuestionEl.appendChild(subtitle);
     }
-    const question = buildQuestion(q.type, q.options, q.name, q.required);
+    const question = buildQuestion(q);
     if (question) {
-      questionEl.appendChild(question);
+      currQuestionEl.appendChild(question);
     } else {
       const error = page.window.document.createElement("h1");
       error.innerHTML = "Erro ao carregar";
-      questionEl.appendChild(error);
+      currQuestionEl.appendChild(error);
     }
     if (fullscreen && i !== parsed.length - 1) {
       const btn = page.window.document.createElement("button");
       btn.innerHTML = "Próximo";
       btn.className = "next";
-      questionEl.appendChild(btn);
+      currQuestionEl.appendChild(btn);
     } else if (i === parsed.length - 1) {
       const br = page.window.document.createElement("br");
-      questionEl.appendChild(br);
+      currQuestionEl.appendChild(br);
       const btn = page.window.document.createElement("button");
       btn.innerHTML = "Finalizar";
       btn.id = "send";
-      questionEl.appendChild(btn);
+      currQuestionEl.appendChild(btn);
     }
 
-    container.appendChild(questionEl);
+    // if the question is the same page, we need to replace the last question
+    if (questionConfig.samePage) {
+      container.replaceChild(currQuestionEl, container.lastChild);
+    } else {
+      container.appendChild(currQuestionEl);
+    }
   });
 
-  const scripts = buildLogic(parsed, url, finishURL, fullscreen, startMsg, offline);
+  if (!finishMessage.startsWith("http") && finishMessage) {
+    const questionEl = page.window.document.createElement("div");
+    questionEl.className = "question";
+    const title = page.window.document.createElement("p");
+    title.innerHTML = finishMessage;
+    title.className = "title";
+    const btn = page.window.document.createElement("button");
+    btn.innerHTML = "Começar";
+    questionEl.appendChild(title);
+    container.appendChild(questionEl);
+  }
+  const scripts = buildLogic(
+    parsed,
+    url,
+    finishMessage,
+    fullscreen,
+    startMsg,
+    offline
+  );
   const scriptEl = page.window.document.createElement("script");
   scriptEl.innerHTML = scripts;
   page.window.document.body.appendChild(scriptEl);
@@ -472,12 +623,12 @@ const promptConfig = [
   {
     type: "input",
     name: "startMsg",
-    message: "Welcome message (optimal)",
+    message: "Welcome message (optional)",
   },
   {
     type: "confirm",
     name: "fullscreen",
-    default: false,
+    default: true,
     message: "Show questions one by one? (Typeform-like)",
   },
   {
@@ -488,9 +639,9 @@ const promptConfig = [
   },
   {
     type: "input",
-    name: "finishURL",
-    default: "#",
-    message: "Redirecting URL after submission (optional)",
+    name: "finishMessage",
+    default: "Obrigado por responder!",
+    message: "Redirecting URL OR message after form is submitted",
   },
   {
     type: "input",
@@ -504,11 +655,9 @@ async function run() {
   const settings = await inquirer.prompt(promptConfig);
   const dom = await JSDOM.fromURL(settings.url);
 
-  const questions = dom.window.document.querySelectorAll(
-    "[data-params]"
-  );
+  const questions = dom.window.document.querySelectorAll("[data-params]");
 
-  console.log("Parsing...")
+  console.log("Parsing...");
   questions.forEach(readData);
 
   const page = buildPage(settings);
