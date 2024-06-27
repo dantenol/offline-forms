@@ -115,7 +115,6 @@ function getConfigs(title) {
   const regexValue = /REGEX=(\^.+?\$)( |\])/g.exec(configText);
   const samePageValue = /SAMEPAGE=(TRUE)( |\])/g.exec(configText);
   const placeholderValue = /PLACEHOLDER=(.+?)( |\])/g.exec(configText);
-  const autoNextValue = /AUTONEXT=(\d+)( |\])/g.exec(configText);
   const skip = skipValue ? skipValue[1] : undefined;
   const mask = maskValue ? maskValue[1] : undefined;
   const regex = regexValue ? regexValue[1] : undefined;
@@ -123,7 +122,7 @@ function getConfigs(title) {
 
   const placeholder = placeholderValue ? placeholderValue[1] : undefined;
 
-  return { originalTitle, skip, mask, regex, samePage, placeholder, autoNext };
+  return { originalTitle, skip, mask, regex, samePage, placeholder };
 }
 
 function buildInput(title, name, required) {
@@ -190,11 +189,6 @@ function buildMultipleChoice(name, options, type, required) {
     if (regex) {
       inp.setAttribute("data-regex", regex);
     }
-    if (type === "checkbox") {
-      if (autoNext) {
-        inp.setAttribute("data-autoNext", autoNext);
-      }
-    }
     inp.id = "" + /\d+/g.exec(name) + "." + originalTitle;
     label.htmlFor = "" + /\d+/g.exec(name) + "." + originalTitle;
     label.innerHTML = originalTitle;
@@ -225,7 +219,7 @@ function buildSelect(name, options, required) {
 
 function buildLogic(
   build,
-  formURL,
+  responseURL,
   finishMessage,
   fullscreen,
   startMsg,
@@ -241,8 +235,6 @@ function buildLogic(
     let i = step;
     if (hasMessage && step === 0) {
       return true;
-    } else if (hasMessage) {
-      i--;
     }
     const inputElementNames = document.querySelectorAll(".question")[i].querySelectorAll("[name]");
 
@@ -279,6 +271,22 @@ function buildLogic(
     });
 
     return checks.every((c) => c === true);
+  }
+
+  function nextBtnClick() {        
+    const question = document.querySelectorAll(".question")[step];
+    const selectedRadio = question.querySelector("[name][type='radio']:checked")
+    if (!selectedRadio) {
+      next();
+      return;
+    }
+    const skip = selectedRadio?.dataset?.skip;
+    console.log(skip);
+    if (skip) {
+      next(skip);
+    } else {
+      next();
+    }
   }
 
   function next(goToNext) {
@@ -339,6 +347,9 @@ function buildLogic(
   }
 
   function checkData(data) {
+    if (${fullscreen}) {
+      return;
+    };
     build.forEach((q) => {
       if (q.required && !data[q.name]) {
         console.log(q.name, data)
@@ -388,12 +399,14 @@ function buildLogic(
       _: 1718735723538,
     }
     const params = convertObjectToURLSearchParams(paramsObj);
+    document.getElementById("send").disabled = true;
 
     try {
       const res = await axios(
-        "${formURL.replace("viewform", "formResponse")}?" + params,
+        "${responseURL.replace("viewform", "formResponse")}?" + params,
       );
     } catch (error) {
+      document.getElementById("send").disabled = false;
       // show status code and message
       console.log(error);
       console.log(error.response.status, error.response.data);
@@ -404,8 +417,6 @@ function buildLogic(
         next();
       }
     }
-
-    document.getElementById("send").disabled = true;
   }
 
   function resetForm() {
@@ -439,7 +450,7 @@ function buildLogic(
   }
 
   window.document.querySelectorAll("button.next").forEach(b => {
-    b.addEventListener("click", next, false);
+    b.addEventListener("click", nextBtnClick, false);
   });
 
   window.document.getElementById("send").addEventListener("click", submit, false);
@@ -487,7 +498,7 @@ function buildLogic(
   return script;
 }
 
-function buildPage({ startMsg, finishMessage, fullscreen, url, offline }) {
+function buildPage({ startMsg, finishMessage, fullscreen, url, offline, response_url }) {
   const page = new JSDOM("<html><body></body></html>");
   const head = page.window.document.head;
   head.innerHTML = `<meta charset="UTF-8" />
@@ -594,7 +605,7 @@ function buildPage({ startMsg, finishMessage, fullscreen, url, offline }) {
   }
   const scripts = buildLogic(
     parsed,
-    url,
+    response_url || url,
     finishMessage,
     fullscreen,
     startMsg,
@@ -613,6 +624,23 @@ const promptConfig = [
     message: "Google Forms URL",
     validate: function (value) {
       var pass = value.match(urlRegex);
+      if (pass) {
+        return true;
+      }
+
+      return "Insert a valid URL";
+    },
+  },
+  {
+    type: "input",
+    name: "response_url",
+    message: "URL to send answers",
+    default: "",
+    validate: function (value) {
+      if (!value) {
+        return true;
+      }
+      const pass = value.match(urlRegex);
       if (pass) {
         return true;
       }
