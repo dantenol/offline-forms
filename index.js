@@ -100,6 +100,9 @@ function buildQuestion({ type, options, name, required, title }) {
  * SKIP is the number of steps to skip if the option is selected
  * MASK is the input mask for the input
  * REGEX is the regex to validate the input
+ * PLACEHOLDER is the placeholder for the input
+ * SAMEPAGE is a boolean to determine if the question should be in the same page
+ * VALUE is the override value for the input
  * @param {string} title
  * @returns string
  */
@@ -115,14 +118,16 @@ function getConfigs(title) {
   const regexValue = /REGEX=(\^.+?\$)( |\])/g.exec(configText);
   const samePageValue = /SAMEPAGE=(TRUE)( |\])/g.exec(configText);
   const placeholderValue = /PLACEHOLDER=(.+?)( |\])/g.exec(configText);
+  const valueValue = /VALUE=(.+?)( |\])/g.exec(configText);
   const skip = skipValue ? skipValue[1] : undefined;
   const mask = maskValue ? maskValue[1] : undefined;
   const regex = regexValue ? regexValue[1] : undefined;
   const samePage = samePageValue ? samePageValue[1] === "TRUE" : undefined;
+  const value = valueValue ? valueValue[1] : undefined;
 
   const placeholder = placeholderValue ? placeholderValue[1] : undefined;
 
-  return { originalTitle, skip, mask, regex, samePage, placeholder };
+  return { originalTitle, skip, mask, regex, samePage, placeholder, value };
 }
 
 function buildInput(title, name, required) {
@@ -169,13 +174,13 @@ function buildMultipleChoice(name, options, type, required) {
     el.classList.add("horizontal");
   }
   options.forEach((o) => {
-    const { originalTitle, skip, mask, regex } = getConfigs(o);
+    const { originalTitle, skip, mask, regex, value } = getConfigs(o);
     const optionContainer = q.window.document.createElement("div");
     optionContainer.className = "optionContainer";
     const inp = q.window.document.createElement("input");
     const label = q.window.document.createElement("label");
     inp.type = type;
-    inp.value = originalTitle;
+    inp.value = value || originalTitle;
     inp.name = name;
     if (required) {
       inp.setAttribute("data-required", "true");
@@ -214,6 +219,51 @@ function buildSelect(name, options, required) {
     opt.innerHTML = o;
     el.appendChild(opt);
   });
+  return el;
+}
+
+function buildLocation(name, required) {
+  const q = new JSDOM("<div />");
+  const el = q.window.document.querySelector("div");
+
+  const questionId = /\d+/g.exec(name);
+  const initialBtn = q.window.document.createElement("button");
+  initialBtn.className = "getLocation initial";
+  initialBtn.innerHTML = "📍Usar minha localização atual"
+  initialBtn.setAttribute("onclick", "askAndCaptureGeolocation(" + questionId + ")")
+
+  const waitBtn = q.window.document.createElement("button")
+  waitBtn.className = "getLocation wait"
+  waitBtn.innerHTML = "Aguarde..."
+  waitBtn.hidden = true
+
+  const errorBtn = q.window.document.createElement("button")
+  errorBtn.className = "getLocation error"
+  errorBtn.innerHTML = "Erro. Insira o endereço manualmente"
+  errorBtn.hidden = true
+
+  const questionSpacer = q.window.document.createElement("div")
+  questionSpacer.className = "questionSpacer"
+  const subtitle = q.window.document.createElement("p")
+  subtitle.className = "subtitle"
+  subtitle.innerHTML = "Digite o endereço completo"
+
+  const input = q.window.document.createElement("input")
+  input.type = "text"
+  input.name = name
+  input.id = questionId;
+  input.placeholder = "Digite aqui..."
+  if (required) {
+    input.setAttribute("data-required", "true");
+  }
+
+  el.appendChild(initialBtn)
+  el.appendChild(waitBtn)
+  el.appendChild(errorBtn)
+  el.appendChild(questionSpacer)
+  el.appendChild(subtitle)
+  el.appendChild(input)
+
   return el;
 }
 
@@ -367,6 +417,35 @@ function buildLogic(
         4000,
       )
     })
+  }
+
+  // create a function to get the user location
+  function askAndCaptureGeolocation(id) {
+    console.log("askAndCaptureGeolocation");
+    const initialBtn = document.querySelector(".getLocation.initial");
+    const waitBtn = document.querySelector(".getLocation.wait");
+    const errorBtn = document.querySelector(".getLocation.error");
+
+    if (!initialBtn || !waitBtn || !errorBtn) {
+      return;
+    }
+
+    try {
+      initialBtn.hidden = true;
+      if (navigator.geolocation) {
+        waitBtn.hidden = false;
+        navigator.geolocation.getCurrentPosition((position) => {
+          const lat = position.coords.latitude;
+          const long = position.coords.longitude;
+          document.getElementById(id).value = lat + ", " + long;
+          next();
+        });
+      } else {
+        errorBtn.hidden = false;
+      }
+    } catch (error) {
+      errorBtn.hidden = false;
+    }
   }
 
   function convertObjectToURLSearchParams(obj) {
